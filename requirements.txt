@@ -1,0 +1,7 @@
+# translate-ime 的运行依赖（只有这两个，都是为了中文拼音候选）
+#
+# jieba 只用来读它的词频词典 dict.txt，不调用分词功能。
+# 注意：PyPI 上 jieba 从 0.40 起只发 .tar.gz 源码包，0.39 是最后一个带 .zip 的版本。
+# 用 pip 正常安装即可，>=0.39 都能跑。
+pypinyin>=0.51
+jieba>=0.39

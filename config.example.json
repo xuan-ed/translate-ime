@@ -1,0 +1,69 @@
+{
+  "api": {
+    "provider": "deepseek",
+    "base_url": "https://api.deepseek.com",
+    "path": "/chat/completions",
+    "model": "deepseek-chat",
+    "api_key": "",
+    "timeout": 8.0,
+    "temperature": 0.0
+  },
+  "hotkeys": {
+    "compose": "ctrl+alt+space",
+    "toggle_default": "ctrl+alt+l",
+    "toggle_enabled": "ctrl+alt+z",
+    "toggle_direct": "",
+    "quit": "ctrl+alt+q"
+  },
+  "output": {
+    "default_language": "zh",
+    "start_enabled": true,
+    "boost_file": "user_boosts.json",
+    "boost_on_correct": 1.0,
+    "boost_on_pick": 0.25,
+    "log_file": "translate-ime.log",
+    "tray": true
+  },
+  "translate": {
+    "debounce_ms": 250,
+    "max_length": 280,
+    "cache_size": 1024,
+    "enabled": true,
+    "variants": 4
+  },
+  "pinyin": {
+    "max_candidates": 7,
+    "beam_width": 24,
+    "max_word_len": 6,
+    "min_freq": 20,
+    "dict_cache": "pinyin_index.pkl"
+  },
+  "overlay": {
+    "font_family": "Microsoft YaHei UI",
+    "font_size": 16,
+    "secondary_font_size": 14,
+    "hint_font_size": 9,
+    "min_width": 520,
+    "max_width": 900,
+    "bg": "#1b1c22",
+    "fg": "#eceef5",
+    "accent_bg": "#2f6fd0",
+    "accent_fg": "#ffffff",
+    "dim": "#8b8d9a",
+    "border": "#3a3c47",
+    "row_bg": "#24262e",
+    "row_active_bg": "#2b2e39",
+    "sel_soft": "#3d4150",
+    "alpha": 0.97,
+    "offset_y": 28
+  },
+  "input": {
+    "shift_tap_ms": 600,
+    "shift_tap_toggles": true,
+    "toast_ms": 1600
+  },
+  "ui": {
+    "open_panel_on_start": true,
+    "guide": true
+  }
+}

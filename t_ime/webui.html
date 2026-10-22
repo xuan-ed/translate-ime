@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="csrf-token" content="__T_IME_TOKEN__">
+<title>translate-ime 控制板</title>
+<style>
+  :root {
+    --bg: #1b1c22; --panel: #24262e; --panel2: #2b2e39; --line: #3a3c47;
+    --fg: #eceef5; --dim: #8b8d9a; --accent: #2f6fd0; --accent2: #4b8bea;
+    --ok: #4bbf73; --warn: #d8a13a; --err: #d9534f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 14px/1.55 "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif;
+  }
+  header {
+    position: sticky; top: 0; z-index: 5; background: #16171c;
+    border-bottom: 1px solid var(--line); padding: 12px 20px;
+  }
+  header h1 { margin: 0; font-size: 16px; letter-spacing: .3px; }
+  header h1 small { color: var(--dim); font-weight: 400; margin-left: 8px; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 20px 20px 80px; }
+  .bar {
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 10px 14px; margin-bottom: 18px;
+  }
+  .bar .state { flex: 1 1 320px; min-width: 260px; }
+  .pill {
+    display: inline-block; padding: 2px 9px; border-radius: 999px;
+    font-size: 12px; border: 1px solid var(--line); color: var(--dim);
+  }
+  .pill.on { color: #0d1b12; background: var(--ok); border-color: var(--ok); font-weight: 600; }
+  .pill.off { color: var(--dim); }
+  .pill.err { color: #fff; background: var(--err); border-color: var(--err); }
+  /* 第 110 轮：实例说了一句「我拒绝了这个动作」时，得让它在页面上有个位置。
+     以前它只活在候选窗那 1.6 秒的 toast 里，页面这边看起来就是「点了没反应」。 */
+  .inst-note {
+    margin: -8px 0 18px; padding: 9px 13px; border-radius: 8px;
+    border: 1px solid var(--warn); background: rgba(216, 161, 58, .10);
+    color: var(--warn); font-size: 13px;
+  }
+  section {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 14px 16px 8px; margin-bottom: 16px;
+  }
+  section h2 { font-size: 14px; margin: 0 0 10px; color: var(--accent2); }
+  section h2 span { color: var(--dim); font-weight: 400; font-size: 12px; margin-left: 6px; }
+  .row {
+    display: grid; grid-template-columns: 190px 1fr auto; gap: 10px;
+    align-items: center; padding: 7px 0; border-top: 1px dashed #31333d;
+  }
+  .row:first-of-type { border-top: 0; }
+  .row label { color: var(--fg); }
+  .row .hint { grid-column: 2 / span 2; color: var(--dim); font-size: 12px; margin-top: -4px; }
+  input[type=text], input[type=password], input[type=number], select {
+    width: 100%; padding: 7px 9px; border-radius: 7px; background: #1d1f26;
+    color: var(--fg); border: 1px solid var(--line); font: inherit;
+  }
+  input:focus, select:focus { outline: none; border-color: var(--accent2); }
+  button {
+    background: var(--panel2); color: var(--fg); border: 1px solid var(--line);
+    border-radius: 7px; padding: 7px 12px; font: inherit; cursor: pointer;
+  }
+  button:hover { border-color: var(--accent2); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button.primary:hover { background: var(--accent2); }
+  button.danger { border-color: #6b3134; color: #f2b6b7; }
+  button:disabled { opacity: .55; cursor: progress; }
+  .foot {
+    position: fixed; left: 0; right: 0; bottom: 0; background: #16171c;
+    border-top: 1px solid var(--line); padding: 10px 20px;
+    display: flex; gap: 12px; align-items: center; justify-content: center;
+  }
+  .foot .msg { flex: 1; max-width: 620px; font-size: 13px; }
+  .ok { color: var(--ok); } .warn { color: var(--warn); } .err { color: var(--err); }
+  ul.problems { margin: 6px 0 0; padding-left: 20px; }
+  ul.problems li { margin: 2px 0; }
+  details summary { cursor: pointer; color: var(--dim); }
+  .kbd { font-family: Consolas, monospace; color: var(--accent2); }
+</style>
+</head>
+<body>
+<header>
+  <h1>translate-ime 控制板 <small>本地页面 · 保存后常驻实例立刻重读配置</small></h1>
+</header>
+<div class="wrap">
+  <div class="bar">
+    <div class="state">
+      <span id="run-pill" class="pill off">查询中…</span>
+      <span id="cfg-path" class="pill" title="">配置：—</span>
+      <span id="reload-info" class="pill off">—</span>
+    </div>
+    <button id="btn-reload">重载配置</button>
+    <button id="btn-suspend">挂起 / 恢复</button>
+    <button id="btn-lang">切上屏语言</button>
+    <button id="btn-quit" class="danger">退出实例</button>
+  </div>
+  <div id="inst-note" class="inst-note" hidden></div>
+
+  <section>
+    <h2>快捷键 <span>点「按一下」然后直接敲你想要的组合键；留空 = 不用这个快捷键</span></h2>
+    <div id="hotkeys"></div>
+  </section>
+
+  <section>
+    <h2>翻译引擎 <span>改 api_key / provider 后不用重启</span></h2>
+    <div class="row"><label>provider</label>
+      <select id="api-provider">
+        <option value="deepseek">deepseek（官方接口）</option>
+        <option value="custom">custom（自建 / 兼容 OpenAI 的服务）</option>
+        <option value="mock">mock（离线词表，不发网络请求）</option>
+      </select><span></span></div>
+    <div class="row"><label>base_url</label><input type="text" id="api-base_url"><span></span></div>
+    <div class="row"><label>path</label><input type="text" id="api-path"><span></span></div>
+    <div class="row"><label>model</label><input type="text" id="api-model"><span></span></div>
+    <div class="row"><label>api_key</label><input type="password" id="api-api_key" autocomplete="off">
+      <button id="btn-clear-key" title="清空已保存的 key">清空</button></div>
+    <div class="row"><label>timeout（秒）</label><input type="number" step="0.5" min="1" id="api-timeout"><span></span></div>
+    <div class="row"><label>temperature</label><input type="number" step="0.1" min="0" max="2" id="api-temperature"><span></span></div>
+  </section>
+
+  <section>
+    <h2>翻译行为</h2>
+    <div id="translate"></div>
+  </section>
+
+  <section>
+    <h2>打字与提示</h2>
+    <div id="input"></div>
+  </section>
+
+  <section>
+    <h2>输出 / 自学习</h2>
+    <div id="output"></div>
+  </section>
+
+  <section>
+    <h2>拼音与索引 <span>min_freq / max_word_len / dict_cache 改完要重启（会重建索引）</span></h2>
+    <div id="pinyin"></div>
+  </section>
+
+  <section>
+    <h2>窗口外观 <span>改完要重启</span></h2>
+    <details>
+      <summary>展开 / 收起（字体、配色、宽度）</summary>
+      <div id="overlay" style="margin-top:10px"></div>
+    </details>
+  </section>
+</div>
+
+<div class="foot">
+  <div id="msg" class="msg">正在读取配置…</div>
+  <button id="btn-reread">重新读取</button>
+  <button id="btn-defaults">恢复默认值</button>
+  <button id="btn-save" class="primary">保存并同步</button>
+</div>
+
+<script>
+"use strict";
+
+// 这些字段是数字/布尔，收集时要按类型送回去；其余按字符串。
+const BOOL_FIELDS = new Set([
+  "translate.enabled", "input.shift_tap_toggles", "output.tray",
+  "output.start_enabled",
+]);
+const NUM_FIELDS = new Set([
+  "api.timeout", "api.temperature", "translate.debounce_ms",
+  "translate.max_length", "translate.cache_size", "translate.variants",
+  "input.shift_tap_ms", "input.toast_ms", "output.boost_on_correct",
+  "output.boost_on_pick", "pinyin.max_candidates", "pinyin.beam_width",
+  "pinyin.max_word_len", "pinyin.min_freq", "overlay.font_size",
+  "overlay.secondary_font_size", "overlay.hint_font_size",
+  "overlay.min_width", "overlay.max_width", "overlay.alpha",
+  "overlay.offset_y",
+]);
+const HOTKEYS = [
+  ["quit", "退出输入法"],
+  ["toggle_enabled", "挂起 / 恢复"],
+  ["toggle_default", "切换默认上屏语言"],
+  ["toggle_direct", "切换拼音 / 英文直通"],
+  ["compose", "上屏候选词 / 翻译"],
+];
+const PASSWORD_FIELDS = new Set(["api.api_key"]);
+
+let cfg = null;          // 服务器给的（api_key 已打码）
+let defaults = null;
+let cfgMatch = true;     // 面板这份配置，是不是常驻实例正在重读的那份
+let instCfg = "";        // 实例用的是哪份（config_match 为 false 时给用户看）
+let fileError = "";      // 配置文件整份读不懂时的原因（页面显示的是默认值，第 114 轮）
+let keyTouched = false;  // 用户是否改过 key 输入框
+let clearKey = false;
+
+const $ = (id) => document.getElementById(id);
+
+function getPath(obj, path) {
+  const parts = path.split(".");
+  let cur = obj;
+  for (const p of parts) {
+    if (cur == null || typeof cur !== "object") return undefined;
+    cur = cur[p];
+  }
+  return cur;
+}
+function setPath(obj, path, value) {
+  const parts = path.split(".");
+  let cur = obj;
+  for (let i = 0; i < parts.length - 1; i++) {
+    if (typeof cur[parts[i]] !== "object" || cur[parts[i]] === null) cur[parts[i]] = {};
+    cur = cur[parts[i]];
+  }
+  cur[parts[parts.length - 1]] = value;
+}
+
+function row(label, id, kind, value, hint) {
+  // kind: text | number | password | select
+  let input;
+  if (kind === "select") {
+    input = document.createElement("select");
+  } else {
+    input = document.createElement("input");
+    input.type = kind === "password" ? "password" : (kind === "number" ? "number" : "text");
+    if (kind === "number") { input.step = "any"; }
+  }
+  input.id = id;
+  input.value = value === undefined || value === null ? "" : value;
+  const wrap = document.createElement("div");
+  wrap.className = "row";
+  const lab = document.createElement("label");
+  lab.textContent = label;
+  lab.htmlFor = id;
+  wrap.appendChild(lab);
+  wrap.appendChild(input);
+  const slot = document.createElement("span");
+  wrap.appendChild(slot);
+  if (hint) {
+    const h = document.createElement("div");
+    h.className = "hint";
+    h.textContent = hint;
+    wrap.appendChild(h);
+  }
+  return wrap;
+}
+
+function checkbox(label, id, checked) {
+  const wrap = document.createElement("div");
+  wrap.className = "row";
+  const lab = document.createElement("label");
+  lab.textContent = label;
+  lab.htmlFor = id;
+  const inp = document.createElement("input");
+  inp.type = "checkbox";
+  inp.id = id;
+  inp.checked = !!checked;
+  inp.style.width = "auto";
+  inp.style.justifySelf = "start";
+  wrap.appendChild(lab);
+  wrap.appendChild(inp);
+  wrap.appendChild(document.createElement("span"));
+  return wrap;
+}
+
+function render() {
+  // 热键
+  const hk = $("hotkeys");
+  hk.innerHTML = "";
+  for (const [name, label] of HOTKEYS) {
+    const line = document.createElement("div");
+    line.className = "row";
+    const lab = document.createElement("label");
+    lab.textContent = label;
+    line.appendChild(lab);
+    const inp = document.createElement("input");
+    inp.type = "text";
+    inp.id = "hk-" + name;
+    inp.className = "kbd";
+    inp.placeholder = "（不用）";
+    inp.value = getPath(cfg, "hotkeys." + name) || "";
+    line.appendChild(inp);
+    const btns = document.createElement("span");
+    const det = document.createElement("button");
+    det.textContent = "按一下";
+    det.onclick = () => detect(name, det, inp);
+    const clr = document.createElement("button");
+    clr.textContent = "清空";
+    clr.style.marginLeft = "6px";
+    clr.onclick = () => { inp.value = ""; };
+    btns.appendChild(det);
+    btns.appendChild(clr);
+    line.appendChild(btns);
+    hk.appendChild(line);
+  }
+
+  // 翻译行为
+  const tr = $("translate");
+  tr.innerHTML = "";
+  tr.appendChild(checkbox("翻译功能（关掉 = 只打拼音，不发给模型）", "translate-enabled",
+    getPath(cfg, "translate.enabled")));
+  tr.appendChild(row("防抖 debounce_ms", "translate-debounce_ms", "number",
+    getPath(cfg, "translate.debounce_ms"), "停下来多久才发请求；越小越快，越费额度"));
+  tr.appendChild(row("最多字数 max_length", "translate-max_length", "number",
+    getPath(cfg, "translate.max_length"), "超过就不翻译，避免一次送太长"));
+  tr.appendChild(row("候选变体数 variants", "translate-variants", "number",
+    getPath(cfg, "translate.variants"), "云端给几个译法供你选"));
+  tr.appendChild(row("缓存条数 cache_size", "translate-cache_size", "number",
+    getPath(cfg, "translate.cache_size")));
+
+  // 打字与提示
+  const inp = $("input");
+  inp.innerHTML = "";
+  inp.appendChild(checkbox("单击 Shift 切拼音 / 直通", "input-shift_tap_toggles",
+    getPath(cfg, "input.shift_tap_toggles")));
+  inp.appendChild(row("单击判定窗口 shift_tap_ms", "input-shift_tap_ms", "number",
+    getPath(cfg, "input.shift_tap_ms"),
+    "按下到松开不超过这个毫秒数才算「单击」；设 0 等于关掉 Shift 单击"));
+  inp.appendChild(row("提示条停留 toast_ms", "input-toast_ms", "number",
+    getPath(cfg, "input.toast_ms")));
+
+  // 输出
+  const out = $("output");
+  out.innerHTML = "";
+  const lang = document.createElement("select");
+  lang.id = "output-default_language";
+  for (const [v, t] of [["zh", "中文（拼音上屏）"], ["en", "译文（打完拼音出英文，回车/空格上屏译文）"]]) {
+    const o = document.createElement("option");
+    o.value = v; o.textContent = t;
+    lang.appendChild(o);
+  }
+  lang.value = getPath(cfg, "output.default_language") || "zh";
+  const langRow = document.createElement("div");
+  langRow.className = "row";
+  const ll = document.createElement("label");
+  ll.textContent = "默认上屏语言";
+  langRow.appendChild(ll); langRow.appendChild(lang); langRow.appendChild(document.createElement("span"));
+  out.appendChild(langRow);
+  out.appendChild(checkbox("启动时就是开启状态", "output-start_enabled",
+    getPath(cfg, "output.start_enabled")));
+  out.appendChild(checkbox("显示托盘图标", "output-tray",
+    getPath(cfg, "output.tray")));
+  out.appendChild(row("自学习文件 boost_file", "output-boost_file", "text",
+    getPath(cfg, "output.boost_file"), "相对路径按程序目录算"));
+  out.appendChild(row("选对加权 boost_on_correct", "output-boost_on_correct", "number",
+    getPath(cfg, "output.boost_on_correct")));
+  out.appendChild(row("手选加权 boost_on_pick", "output-boost_on_pick", "number",
+    getPath(cfg, "output.boost_on_pick")));
+
+  // 拼音
+  const p = $("pinyin");
+  p.innerHTML = "";
+  p.appendChild(row("候选个数 max_candidates", "pinyin-max_candidates", "number",
+    getPath(cfg, "pinyin.max_candidates")));
+  p.appendChild(row("搜索宽度 beam_width", "pinyin-beam_width", "number",
+    getPath(cfg, "pinyin.beam_width"), "越大越准也越慢"));
+  p.appendChild(row("最大词长 max_word_len", "pinyin-max_word_len", "number",
+    getPath(cfg, "pinyin.max_word_len"), "重建索引要重启"));
+  p.appendChild(row("最低词频 min_freq", "pinyin-min_freq", "number",
+    getPath(cfg, "pinyin.min_freq"), "调小 = 收更多长尾词，索引更大更慢"));
+  p.appendChild(row("索引缓存 dict_cache", "pinyin-dict_cache", "text",
+    getPath(cfg, "pinyin.dict_cache"), "相对路径按程序目录算；删掉它会重建"));
+
+  // 外观
+  const ov = $("overlay");
+  ov.innerHTML = "";
+  for (const key of ["font_size", "secondary_font_size", "hint_font_size",
+                     "min_width", "max_width", "alpha", "offset_y"]) {
+    ov.appendChild(row(key, "overlay-" + key, "number", getPath(cfg, "overlay." + key)));
+  }
+
+  // api_key 提示
+  const keyInput = $("api-api_key");
+  const hint = getPath(cfg, "api.api_key_hint");
+  keyInput.value = "";
+  keyInput.placeholder = hint ? ("已设置（" + hint + "）· 留空不改") : "未设置 · 翻译会走离线词表";
+  keyTouched = false;
+  clearKey = false;
+
+  $("api-provider").value = getPath(cfg, "api.provider") || "deepseek";
+  $("api-base_url").value = getPath(cfg, "api.base_url") || "";
+  $("api-path").value = getPath(cfg, "api.path") || "";
+  $("api-model").value = getPath(cfg, "api.model") || "";
+  $("api-timeout").value = getPath(cfg, "api.timeout");
+  $("api-temperature").value = getPath(cfg, "api.temperature");
+}
+
+function collect() {
+  const out = JSON.parse(JSON.stringify(cfg));
+  for (const [name] of HOTKEYS) {
+    setPath(out, "hotkeys." + name, ($("hk-" + name).value || "").trim());
+  }
+  out.api.provider = $("api-provider").value;
+  out.api.base_url = $("api-base_url").value.trim();
+  out.api.path = $("api-path").value.trim();
+  out.api.model = $("api-model").value.trim();
+  out.api.timeout = Number($("api-timeout").value);
+  out.api.temperature = Number($("api-temperature").value);
+  const key = $("api-api_key").value.trim();
+  out.api.api_key = keyTouched ? key : "********";   // 没动过就送占位符 = 保留原值
+  if (clearKey) out.api.api_key_clear = true;
+
+  for (const id of ["translate-debounce_ms", "translate-max_length",
+                    "translate-cache_size", "translate-variants"]) {
+    const path = id.replace("translate-", "translate.");
+    setPath(out, path, Number($(id).value));
+  }
+  out.translate.enabled = $("translate-enabled").checked;
+  out.input.shift_tap_toggles = $("input-shift_tap_toggles").checked;
+  out.input.shift_tap_ms = Number($("input-shift_tap_ms").value);
+  out.input.toast_ms = Number($("input-toast_ms").value);
+  out.output.default_language = $("output-default_language").value;
+  out.output.start_enabled = $("output-start_enabled").checked;
+  out.output.tray = $("output-tray").checked;
+  out.output.boost_file = $("output-boost_file").value.trim();
+  out.output.boost_on_correct = Number($("output-boost_on_correct").value);
+  out.output.boost_on_pick = Number($("output-boost_on_pick").value);
+  for (const key of ["max_candidates", "beam_width", "max_word_len", "min_freq"]) {
+    setPath(out, "pinyin." + key, Number($("pinyin-" + key).value));
+  }
+  out.pinyin.dict_cache = $("pinyin-dict_cache").value.trim();
+  for (const key of ["font_size", "secondary_font_size", "hint_font_size",
+                     "min_width", "max_width", "alpha", "offset_y"]) {
+    setPath(out, "overlay." + key, Number($("overlay-" + key).value));
+  }
+  return out;
+}
+
+// 写操作要带控制板门票（服务端每个进程生成一张）：携带自定义头会让跨站请求
+// 触发预检，而本站没有 CORS 头 → 别的网页根本发不出写请求（第 108 轮）。
+const TOKEN = (document.querySelector('meta[name="csrf-token"]') || {}).content || "";
+const AUTH = { "X-T-IME-Token": TOKEN };
+
+function say(html, cls) {
+  const m = $("msg");
+  m.className = "msg " + (cls || "");
+  m.innerHTML = html;
+}
+
+async function loadConfig() {
+  say("正在读取配置…");
+  const r = await fetch("/api/config", { cache: "no-store", headers: AUTH });
+  const data = await r.json();
+  if (!data.ok) { say("读配置失败：" + (data.error || r.status), "err"); return; }
+  cfg = data.config;
+  defaults = data.defaults;
+  $("cfg-path").textContent = "配置：" + data.path;
+  $("cfg-path").title = data.path;
+  render();
+  const notes = [];
+  cfgMatch = !(data.running && data.config_match === false);
+  instCfg = data.instance_config || "";
+  if (!cfgMatch) {
+    notes.push("注意：常驻实例用的是另一份配置（" + instCfg + "）—— 这里改完保存**不会**生效。"
+      + "两种改法：把控制板指向那一份再打开，或者退出实例后用 --config " + data.path + " 重启。");
+  }
+  if (data.problems && data.problems.length) notes.push("当前文件里有 " + data.problems.length + " 处被默认值顶替：" + data.problems.join("；"));
+  if (data.unknown && data.unknown.length) notes.push("不认识的键：" + data.unknown.join("、"));
+  if (data.retired && data.retired.length) notes.push("已停用的键：" + data.retired.join("、"));
+  // 文件整份读不懂时，上面那些列表都是干净的，页面显示的其实是程序默认值 ——
+  // 不说一句的话，用户会以为自己的配置就是这样（第 114 轮）。
+  fileError = String(data.file_error || "");
+  const saveBtn = $("btn-save");
+  if (fileError) {
+    notes.unshift("配置文件读不懂（" + fileError + "）—— 下面显示的是**程序默认值**，不是你的配置。"
+      + "先把 " + data.path + " 这个文件修好（多半是少了引号 / 多了逗号）或者删掉，再点「重新读取」。"
+      + "在这之前保存会被拒绝，免得把原文件覆盖掉。");
+  }
+  saveBtn.disabled = !!fileError;
+  saveBtn.title = fileError ? "配置文件读不懂，先修好再保存" : "";
+  say(notes.length ? notes.join(" · ") : "配置已读取。改完点右下角「保存并同步」。", fileError ? "err" : (notes.length ? "warn" : ""));
+  pollStatus();
+}
+
+async function pollStatus() {
+  try {
+    const r = await fetch("/api/status", { cache: "no-store", headers: AUTH });
+    const d = await r.json();
+    const pill = $("run-pill");
+    if (d.running) {
+      pill.className = "pill on";
+      const st = d.status || {};
+      const bits = [];
+      if (st.enabled === false) bits.push("已挂起");
+      if (st.direct) bits.push("英文直通");
+      if (st.tray_enabled === false) bits.push("托盘关着");
+      pill.textContent = "实例在跑" + (bits.length ? "（" + bits.join(" · ") + "）" : "");
+      $("reload-info").className = "pill on";
+      $("reload-info").textContent = "配置重载 " + (st.config_reloads || 0) + " 次";
+      if (st.config_reload_error) {
+        $("reload-info").className = "pill err";
+        $("reload-info").textContent = "上次重载失败：" + st.config_reload_error;
+      }
+      if (!cfgMatch) {
+        // 保存会写这份文件，但实例重读的是另一份 —— 别让它看起来像同步好了（第 109 轮）。
+        $("reload-info").className = "pill err";
+        $("reload-info").textContent = "不同步：实例用的是 " + (instCfg || "另一份配置");
+      }
+      // 第 110 轮：实例自己开口说的话（比如「翻译关着，切不到译文」）也摆出来。
+      // 以前它只活在候选窗 1.6 秒的 toast 里，页面上点完按钮看起来就是「什么都没发生」。
+      const note = String(st.status || "");
+      const noteEl = $("inst-note");
+      if (note) {
+        noteEl.textContent = "实例提示：" + note;
+        noteEl.hidden = false;
+      } else {
+        noteEl.hidden = true;
+      }
+    } else {
+      pill.className = "pill off";
+      pill.textContent = "没有实例在跑（保存后下次启动生效）";
+      $("reload-info").className = "pill off";
+      $("reload-info").textContent = "—";
+      $("inst-note").hidden = true;
+    }
+    const dis = !d.running;
+    for (const id of ["btn-reload", "btn-suspend", "btn-lang", "btn-quit"]) {
+      $(id).disabled = dis;
+    }
+  } catch (e) {
+    $("run-pill").className = "pill err";
+    $("run-pill").textContent = "状态查询失败";
+  }
+}
+
+async function save() {
+  const btn = $("btn-save");
+  btn.disabled = true;
+  say("正在保存…");
+  try {
+    const r = await fetch("/api/config", {
+      method: "POST",
+      headers: Object.assign({ "Content-Type": "application/json" }, AUTH),
+      body: JSON.stringify({ config: collect() }),
+    });
+    const d = await r.json();
+    if (!d.ok) {
+      const errs = (d.errors || []).map((e) => "<li>" + esc(e) + "</li>").join("");
+      const wrn = (d.warnings || []).map((e) => "<li>" + esc(e) + "</li>").join("");
+      say("没有保存：<ul class='problems'>" + errs + "</ul>" +
+          (wrn ? "<details open><summary>另外还有这些要留意</summary><ul class='problems'>" + wrn + "</ul></details>" : ""), "err");
+      return;
+    }
+    // 「要重启才生效」的项单独列一块：它们混在「提醒（不影响保存）」里时，用户会
+    // 以为保存完就已经生效了（第 113 轮：只改 pinyin.min_freq 时回执写着「不用重启」）。
+    const restart = d.restart_required || [];
+    const rst = restart.map((e) => "<li>" + esc(e) + "</li>").join("");
+    const wrn = (d.warnings || [])
+      .filter((e) => !restart.includes(e))
+      .map((e) => "<li>" + esc(e) + "</li>").join("");
+    say("<b class='ok'>已保存</b> —— " + esc(d.note || "") +
+        (rst ? "<details open><summary>这些要重启实例才生效</summary><ul class='problems'>" + rst + "</ul></details>" : "") +
+        (wrn ? "<details open><summary>提醒</summary><ul class='problems'>" + wrn + "</ul></details>" : ""),
+        (rst || wrn) ? "warn" : "ok");
+    await loadConfig();
+    setTimeout(pollStatus, 600);
+  } catch (e) {
+    say("保存失败：" + e, "err");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function detect(name, btn, input) {
+  btn.disabled = true;
+  const old = btn.textContent;
+  btn.textContent = "等你按…";
+  say("请按下你想要的组合键（12 秒内）。这段时间键盘先交给检测：你按下的那一下会被它接住 —— 不会传给浏览器，也不会触发输入法动作（所以按当前生效的 Ctrl+Alt+Q 也不会退出）。");
+  try {
+    const r = await fetch("/api/detect", { cache: "no-store", headers: AUTH });
+    const d = await r.json();
+    if (d.ok) {
+      input.value = d.combo;
+      say("记下了：" + esc(d.combo) + " —— 别忘了点「保存并同步」。", "ok");
+    } else {
+      say("没录到：" + esc(d.error || "超时"), "warn");
+    }
+  } catch (e) {
+    say("检测失败：" + e, "err");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = old;
+  }
+}
+
+async function command(action) {
+  try {
+    const r = await fetch("/api/command", {
+      method: "POST",
+      headers: Object.assign({ "Content-Type": "application/json" }, AUTH),
+      body: JSON.stringify({ action }),
+    });
+    const d = await r.json();
+    say(d.ok ? ("已发送：" + action) : ("没发出去：" + esc(d.error || r.status)), d.ok ? "ok" : "err");
+    setTimeout(pollStatus, 500);
+  } catch (e) {
+    say("发送失败：" + e, "err");
+  }
+}
+
+function esc(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+$("btn-save").onclick = save;
+$("btn-reread").onclick = loadConfig;
+$("btn-defaults").onclick = () => {
+  if (!confirm("把所有项恢复成程序默认值？（还没保存，点「保存并同步」才会写入）")) return;
+  cfg = JSON.parse(JSON.stringify(defaults));
+  render();
+  say("已填成默认值；点「保存并同步」才会写入文件。", "warn");
+};
+$("btn-reload").onclick = () => command("reload");
+$("btn-suspend").onclick = () => command("toggle_enabled");
+$("btn-lang").onclick = () => command("toggle_default");
+$("btn-quit").onclick = () => {
+  if (confirm("确定要让常驻实例退出吗？（之后双击 run.bat 可以再起来）")) command("quit");
+};
+$("btn-clear-key").onclick = () => {
+  const inp = $("api-api_key");
+  inp.value = "";
+  keyTouched = true;
+  clearKey = true;
+  say("已标记为「清空 key」，点「保存并同步」才会真的删掉。", "warn");
+};
+$("api-api_key").addEventListener("input", () => {
+  keyTouched = true;
+  clearKey = false;
+});
+$("api-provider").addEventListener("change", () => {
+  const p = $("api-provider").value;
+  if (p === "mock") say("mock = 离线词表，不发网络请求（适合先试手感）。", "warn");
+});
+
+loadConfig();
+setInterval(pollStatus, 2000);
+</script>
+</body>
+</html>

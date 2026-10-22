@@ -1,0 +1,50 @@
+# ---- 本地配置：里面有 API key，绝对不要提交 ----
+config.json
+user_boosts.json
+
+# ---- 生成的缓存：第一次运行会自动重建 ----
+pinyin_index.pkl
+*.pkl
+
+# ---- 运行日志（后台常驻模式写在这里）----
+translate-ime.log
+translate-ime.log.1
+*.log
+
+# ---- 运行中实例的对外状态 / 命令收件箱（第二个实例的控制面板用）----
+translate-ime.status.json
+translate-ime.ctl
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# ---- 开发过程中的临时目录 / 探针脚本 ----
+.tmp/
+.tmpx/
+tmp*/
+vendor/
+
+# ---- 测试跑出来的临时产物 ----
+tests/_*target_out.*
+tests/_*out.json
+tests/_e2e_target_out.txt
+tests/_demo_target_out.txt
+tray-check.txt
+translate-ime-doctor.txt
+_live_target_out.txt
+
+# ---- 编辑器 / 系统 ----
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
