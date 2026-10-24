@@ -11,9 +11,15 @@ import os
 import re
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+from . import paths as _paths
+
+# 打包成 exe 之后 ROOT 必须是 **exe 旁边**（配置、日志、索引都写这儿），
+# 而 config.example.json 躺在只读的解包目录里。见 t_ime/paths.py。
+ROOT = _paths.app_root()
 CONFIG_PATH = ROOT / "config.json"
-EXAMPLE_PATH = ROOT / "config.example.json"
+EXAMPLE_PATH = _paths.bundle_root() / "config.example.json"
+if not EXAMPLE_PATH.exists():           # 源码跑时两者相同，这里只是兜底
+    EXAMPLE_PATH = ROOT / "config.example.json"
 
 DEFAULTS = {
     "api": {

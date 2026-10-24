@@ -18,9 +18,13 @@ import time
 import traceback
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+#: 可写根目录（配置 / 日志 / 索引缓存都在这儿，打包后是 exe 旁边）。
+ROOT = Path(__file__).resolve().parent if not getattr(sys, "frozen", False) else Path(sys.executable).parent
+# 打包后模块在解包目录里，直接 import 就行；源码跑时要把仓库根塞进 sys.path。
+_BUNDLE = Path(getattr(sys, "_MEIPASS", ROOT))
+for _p in (str(ROOT), str(_BUNDLE)):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 
 def _fix_console_encoding() -> None:
@@ -1132,6 +1136,10 @@ def _interpreter_note(root_dir: Path) -> tuple[bool, str]:
     其实好好的。检查本身没错，缺的是「你在用哪个解释器」这一行。
     """
     import os
+
+    if getattr(sys, "frozen", False):
+        # 打包版：没有 .venv、也没有可换的解释器，依赖全在 exe 里。别拿它去比 .venv。
+        return True, f"{Path(sys.executable).name}（打包版，依赖都在 exe 里）"
 
     venv_py = Path(root_dir) / ".venv" / "Scripts" / "python.exe"
     me = Path(sys.executable)

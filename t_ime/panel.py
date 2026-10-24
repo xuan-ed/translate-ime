@@ -420,11 +420,22 @@ def _python() -> Path:
     return Path(exe) if exe else Path(sys.executable)
 
 
+def _primary_argv(root_dir: Path, *flags: str) -> list[str]:
+    """拉起另一个本程序进程用的前缀：``[解释器, main.py]`` 或打包版的 ``[exe]``。
+
+    打包成 exe 之后既没有 ``python`` 也没有 ``main.py`` 可以拿来执行，
+    参数直接喂给 exe 自己。
+    """
+    if getattr(sys, "frozen", False):
+        return [str(Path(sys.executable)), *flags]
+    return [str(_python()), str(Path(root_dir) / "main.py"), *flags]
+
+
 def panel_argv(root_dir: Path, cfg_path: Path | str | None,
                log_path: Path | str | None = None) -> list[str]:
     """开一个**独立**的设置窗口进程要用的命令行。"""
     root_dir = Path(root_dir)
-    argv = [str(_python()), str(root_dir / "main.py"), "--panel", "--detached"]
+    argv = _primary_argv(root_dir, "--panel", "--detached")
     if cfg_path:
         argv += ["--config", str(cfg_path)]
     if log_path:
@@ -436,7 +447,7 @@ def start_argv(root_dir: Path, cfg_path: Path | str | None = None,
                log_path: Path | str | None = None) -> list[str]:
     """后台拉起常驻实例的命令行（不带 --panel，免得无限套娃）。"""
     root_dir = Path(root_dir)
-    argv = [str(_python()), str(root_dir / "main.py"), "--background", "--detached"]
+    argv = _primary_argv(root_dir, "--background", "--detached")
     if cfg_path:
         argv += ["--config", str(cfg_path)]
     if log_path:

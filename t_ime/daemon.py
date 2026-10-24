@@ -320,7 +320,13 @@ def pythonw_path() -> Path | None:
     """找 ``pythonw.exe``：跟当前解释器同目录的那一个。
 
     用它跑就**没有控制台窗口**。找不到就返回 None，调用方回退成普通 python。
+
+    打包成 exe 之后没有 pythonw.exe 这回事 —— 那个 exe 自己就是窗口版
+    （``console=False``），直接返回它自己。
     """
+    if getattr(sys, "frozen", False):
+        exe = Path(sys.executable)
+        return exe if exe.exists() else None
     exe = Path(sys.executable)
     cand = exe.with_name("pythonw.exe")
     if cand.exists():
@@ -329,12 +335,17 @@ def pythonw_path() -> Path | None:
 
 
 def background_command(root_dir: Path, argv: list[str]) -> list[str] | None:
-    """拼出「后台常驻」版本的命令行（用 pythonw，并带上 --detached 防止再自旋）。"""
+    """拼出「后台常驻」版本的命令行（用 pythonw，并带上 --detached 防止再自旋）。
+
+    打包版里没有 ``main.py`` 这个文件可执行 —— 再跑一次 exe、加同样的参数即可。
+    """
     py = pythonw_path()
     if py is None:
         return None
-    main_py = Path(root_dir) / "main.py"
     extra = [a for a in argv if a not in ("--background", "--detached")]
+    if getattr(sys, "frozen", False):
+        return [str(py), "--background", "--detached", *extra]
+    main_py = Path(root_dir) / "main.py"
     return [str(py), str(main_py), "--background", "--detached", *extra]
 
 
@@ -922,10 +933,23 @@ def autostart_problem(root_dir: Path) -> str:
     if mode == "none" or not tokens:
         return ""
     exe = tokens[0]
-    script = next((t for t in tokens[1:] if t.lower().endswith(".py")), "")
-    if exe and not Path(exe).exists():
+    if not exe:
+        return ""
+    if not Path(exe).exists():
         return (f"记下的 {Path(exe).name} 已经不在了（{exe}）—— "
                 "开机时它启动不起来")
+    if getattr(sys, "frozen", False):
+        # 打包版的自启项就是「exe + 参数」，没有 main.py 参与。只要那个 exe 还
+        # 在，并且就是当前这一份，就算能跑（换个位置摆放的副本会在这里被认出来）。
+        try:
+            same = (Path(exe).resolve() == Path(sys.executable).resolve())
+        except OSError:                       # pragma: no cover
+            same = False
+        if not same:
+            return (f"记的是另一个位置的程序（{Path(exe).resolve()}）—— "
+                    "开机启动的会是那边那份，不是当前这个目录里的这份")
+        return ""
+    script = next((t for t in tokens[1:] if t.lower().endswith(".py")), "")
     if not script:
         return "记下的命令行里找不到 main.py —— 开机时它什么也启动不了"
     try:

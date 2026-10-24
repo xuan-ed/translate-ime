@@ -1,0 +1,96 @@
+name: build-exe
+
+# 什么时候跑：
+#   * 推一个 v 开头的 tag（v0.1.0、v0.2.0 …）→ 打包并发布到 Release
+#   * 手动点「Run workflow」→ 只打包，产物在 Artifacts 里；填了 release_tag 才发 Release
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "要发布成的 tag（例如 v0.1.0）；留空就只打包不发布"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-exe-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: 取代码
+        uses: actions/checkout@v4
+
+      - name: 装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: 装依赖（运行依赖 + PyInstaller）
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller
+
+      # 这里只做「不依赖桌面」的检查：GitHub 的 Windows runner 没有交互桌面，
+      # 任何真的建 Tk 窗口 / 装键盘钩子的测试在这里都会挂，那不代表代码坏了。
+      - name: 冒烟检查
+        run: |
+          python -c "import t_ime.app, t_ime.panel, t_ime.webpanel, t_ime.daemon, t_ime.paths; print('import ok')"
+          python -c "from t_ime.config import load; cfg, probs = load(); print('config ok', probs)"
+          python main.py --help | Select-Object -First 3
+
+      - name: 打包
+        run: python -m PyInstaller --noconfirm --clean translate-ime.spec
+
+      - name: 检查产物
+        run: |
+          $exe = "dist/translate-ime/translate-ime.exe"
+          $cli = "dist/translate-ime/translate-ime-cli.exe"
+          foreach ($f in @($exe, $cli)) {
+            if (!(Test-Path $f)) { throw "少了 $f" }
+          }
+          Get-ChildItem dist/translate-ime | Sort-Object Length -Descending |
+            Select-Object -First 8 Name, Length | Format-Table -AutoSize
+
+      - name: 压缩成 zip
+        run: |
+          $name = "translate-ime-windows-x64"
+          if ($env:GITHUB_REF -like "refs/tags/*") {
+            $name += "-" + $env:GITHUB_REF_NAME
+          }
+          Compress-Archive -Path dist/translate-ime -DestinationPath "$name.zip"
+          "ZIP_NAME=$name" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: 传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ZIP_NAME }}
+          path: ${{ env.ZIP_NAME }}.zip
+          if-no-files-found: error
+
+      - name: 发布到 Release（tag 触发，或手动填了 release_tag）
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_tag || github.ref_name }}
+          name: ${{ inputs.release_tag || github.ref_name }}
+          files: ${{ env.ZIP_NAME }}.zip
+          body: |
+            Windows 绿色版（无需安装 Python）。
+
+            1. 下载下面的 `translate-ime-windows-x64*.zip`
+            2. 解压到任意目录（不要放在 C 盘根目录或 Program Files —— 那儿没有写权限）
+            3. 双击 `translate-ime.exe`，在弹出的设置窗口里填 API key，点「保存并同步」
+
+            排障用 `translate-ime-cli.exe --check`（控制台版才有输出）。
+          generate_release_notes: false

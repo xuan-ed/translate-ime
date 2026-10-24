@@ -77,7 +77,28 @@ translate-ime 把它压成一步：
 - **没配 API key 也能跑** —— 自动退回内置离线短语词典（约 160 条常用词），方便先把界面玩明白。
 - **不注册进系统输入法列表** —— 它是一个独立进程 + 全局键盘钩子 + 悬浮窗，不改系统设置，退出就干净了。
 
+### 下载即用版（不想装 Python）
+
+到 [Releases](https://github.com/xuan-ed/translate-ime/releases) 下最新的 `translate-ime-windows-x64*.zip`：
+
+1. 解压到**任意可写目录**（别放 `C:\Program Files`，那儿不给写配置）；
+2. 双击 `translate-ime.exe` —— 弹出设置窗口，把 API key 填进去，点「保存并同步」；
+3. 想确认它到底能不能收到按键，跑 `translate-ime-cli.exe --check`。
+
+zip 里两个 exe 是有分工的：
+
+| 文件 | 用途 |
+| --- | --- |
+| `translate-ime.exe` | 窗口版（没有控制台），日常双击它 |
+| `translate-ime-cli.exe` | 控制台版，`--check` / `--doctor` / `--build-index` 的输出只有它看得见 |
+
+`_internal` 文件夹要和 exe 放在一起，别只把 exe 单独拷走。配置、日志、拼音索引都写在 **exe 同级目录**，删掉整个文件夹就是卸载。第一次启动会花一两秒建拼音索引。
+
+exe 由 GitHub Actions 在打 tag 时自动构建，见 [`.github/workflows/build-exe.yml`](.github/workflows/build-exe.yml)。
+
 ### 环境要求
+
+（下面是**源码运行**的要求；用上面的 exe 版就不需要装 Python。）
 
 | 项目 | 要求 |
 | --- | --- |
@@ -181,7 +202,7 @@ run.bat --doctor
 run.bat --show-config   :: 改了配置却没反应时跑这条
 ```
 
-`--doctor` 把「你机器上才有的情况」逐项变成一行实测结论（实例状态、完整性级别、钩子装不装得上、候选窗落在哪、配置与热键、日志能不能写），报告同时写进 `translate-ime-doctor.txt`。`--show-config` 会打印**每个选项的生效值和来源**，并点名拼错的键。
+`--doctor` 把「你机器上才有的情况」逐项变成一行实测结论（实例状态、完整性级别、钩子装不装得上、候选窗落在哪、配置与热键、日志能不能写），报告同时写进 `translate-ime-doctor.txt`。`--show-config` 会打印**每个选项的生效值和来源**，并点名拼错的键 —— 改完之后跑一次 **`run.bat --show-config`**，才知道它读的是不是你以为的那份配置。
 
 ### 文档
 
