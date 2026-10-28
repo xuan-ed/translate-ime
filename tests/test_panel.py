@@ -444,6 +444,101 @@ finally:
     shutil.rmtree(str(tmp2), ignore_errors=True)
 
 # ---------------------------------------------------------------------- #
+head(11, "双击打包版 exe：等价于双击 run.bat，而且已经在跑时也要给窗口（第 125 轮）")
+# 打包版没有 run.bat 可点，用户双击的就是 exe 本身，argv 为空。以前这条路径
+# 掉进「前台跑一个没有控制台的实例、不弹窗口」，双击之后什么都没出现。
+import contextlib  # noqa: E402
+import io  # noqa: E402
+
+from t_ime import daemon  # noqa: E402
+from t_ime import winapi as W  # noqa: E402
+
+_frozen_backup = getattr(sys, "frozen", None)
+sys.frozen = True  # type: ignore[attr-defined]
+try:
+    check("双击（无参数）补成 --background --panel",
+          main_mod._double_click_args([]) == ["--background", "--panel"],
+          str(main_mod._double_click_args([])))
+    check("带了参数就不动（--check 不能被补成后台）",
+          main_mod._double_click_args(["--check"]) == ["--check"])
+    check("--no-panel 之类照原样进去（由 _want_panel 决定弹不弹）",
+          main_mod._double_click_args(["--background", "--no-panel"])
+          == ["--background", "--no-panel"])
+finally:
+    if _frozen_backup is None:
+        try:
+            del sys.frozen  # type: ignore[attr-defined]
+        except AttributeError:
+            pass
+    else:
+        sys.frozen = _frozen_backup  # type: ignore[attr-defined]
+
+check("源码模式 python main.py 不带参数：还是前台跑，不被静默改成后台",
+      main_mod._double_click_args([]) == [])
+
+# 窗口版 exe 双击时 sys.stdout / sys.stderr 是 None，print 一下就 AttributeError。
+_std_backup = (sys.stdout, sys.stderr)
+try:
+    sys.stdout = None  # type: ignore[assignment]
+    sys.stderr = None  # type: ignore[assignment]
+    main_mod._ensure_streams()
+    ok_streams = sys.stdout is not None and sys.stderr is not None
+    print("")  # 真跑一句，确认不会再炸
+    check("stdout/stderr 为 None 时被换成能写的空流", ok_streams)
+finally:
+    sys.stdout, sys.stderr = _std_backup
+
+# 「已经在跑」时双击，仍然要把窗口开出来 —— 那正是用户要找的入口。
+tmp3 = Path(tempfile.mkdtemp(prefix="t-ime-panel3-", dir=str(ROOT / ".tmp")))
+cfg3 = tmp3 / "config.json"
+cfg3.write_text(json.dumps({"api": {"provider": "mock"}}, ensure_ascii=False),
+                encoding="utf-8")
+spawned2: list[tuple] = []
+
+
+def _fake_spawn2(*args: object, **kwargs: object) -> tuple[bool, str]:
+    spawned2.append((args, kwargs))
+    return True, "（测试里假装开了窗口）"
+
+
+_real_spawn2 = PANEL_MOD.spawn_panel
+_real_inst = W.instance_exists
+_real_bg = daemon.spawn_background
+PANEL_MOD.spawn_panel = _fake_spawn2  # type: ignore[assignment]
+try:
+    # (a) 状态文件说实例活着 —— 走「第二个实例变控制面板」那条路
+    W.instance_exists = lambda *a, **k: True  # type: ignore[assignment]
+    daemon.spawn_background = lambda *a, **k: daemon.SPAWN_ALREADY_RUNNING  # type: ignore[assignment]
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc_dup = main_mod.main(["--background", "--panel", "--config", str(cfg3)])
+    out_dup = buf.getvalue()
+    check("已经在跑 + 要窗口：照样开窗（不是直接 return 0）",
+          len(spawned2) == 1 and rc_dup == 0,
+          f"rc={rc_dup} spawned={len(spawned2)} out={out_dup.strip()[:100]}")
+    check("已经在跑：说的是「已经在跑」，没有再去拉一份实例",
+          "已经在跑了" in out_dup and "已在后台启动" not in out_dup,
+          out_dup.strip()[:120])
+
+    # (b) 状态文件还没写出来、但互斥体已被抢（两次双击撞车的竞态）
+    spawned2.clear()
+    W.instance_exists = lambda *a, **k: False  # type: ignore[assignment]
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc_race = main_mod.main(["--background", "--panel", "--config", str(cfg3)])
+    out_race = buf.getvalue()
+    check("撞车（spawn 返回「已经在跑」）时也开窗",
+          len(spawned2) == 1 and rc_race == 0,
+          f"rc={rc_race} spawned={len(spawned2)} out={out_race.strip()[:100]}")
+    check("撞车时明说「已经有一份在后台跑着」", "已经有一份" in out_race,
+          out_race.strip()[:120])
+finally:
+    PANEL_MOD.spawn_panel = _real_spawn2  # type: ignore[assignment]
+    W.instance_exists = _real_inst  # type: ignore[assignment]
+    daemon.spawn_background = _real_bg  # type: ignore[assignment]
+    shutil.rmtree(str(tmp3), ignore_errors=True)
+
+# ---------------------------------------------------------------------- #
 print()
 print("=" * 72)
 print(f"  结果：{PASS} 通过 / {FAIL} 失败")

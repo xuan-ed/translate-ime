@@ -34,6 +34,44 @@ def _fix_console_encoding() -> None:
     fix_console_encoding()
 
 
+def _ensure_streams() -> None:
+    """打包版双击时 ``sys.stdout`` / ``sys.stderr`` 是 ``None``，print 一下就炸。
+
+    PyInstaller 的 windowed 引导（``console=False``）不会给进程分配控制台，
+    于是 Python 按「没有标准流」处理：``sys.stdout is None``。而 main.py 里到处
+    是 ``print``（「配置来自 …」「已在后台启动 …」），第一个 print 就会
+    ``AttributeError: 'NoneType' object has no attribute 'write'`` —— 用户双击
+    exe 看到的是「什么都没发生」，连实例都没起来（第 125 轮真机）。
+
+    这里给它们塞一个 ``os.devnull``，行为和从控制台启动时「输出没人看」一致：
+    该写的日志照写文件，屏幕上的那些话丢弃（窗口版本来也没地方显示）。
+    """
+    import os
+
+    for name in ("stdout", "stderr"):
+        if getattr(sys, name, "missing") is None:
+            try:
+                setattr(sys, name, open(os.devnull, "w", encoding="utf-8"))
+            except OSError:  # pragma: no cover - devnull 打不开就真没辙了
+                pass
+
+
+def _double_click_args(argv: list[str]) -> list[str]:
+    """双击打包版 exe（一个参数都没给）时，等价于双击 ``run.bat``。
+
+    ``run.bat`` 里写的是 ``main.py --background --panel``，所以源码模式双击
+    run.bat 一直有窗口；但打包版没有 run.bat，用户双击的是 exe 本身，argv 为空
+    —— 不补这两个开关就会掉进「前台跑一个没有控制台的实例、也不弹设置窗口」，
+    表现就是「双击了，什么都没出现」（第 125 轮）。
+
+    只对 frozen 生效：源码模式 ``python main.py`` 不带参数仍然是前台跑（很多
+    文档和测试就是这么用的），不能被这条静默改掉。
+    """
+    if argv or not getattr(sys, "frozen", False):
+        return list(argv)
+    return ["--background", "--panel"]
+
+
 def _hotkey_epilog() -> str:
     """``--help`` 末尾的快捷键表：**从配置读**。
 
@@ -172,11 +210,15 @@ def _pin_cli_paths(argv: list[str], cfg_path: Path | None,
 
 # ---------------------------------------------------------------------- #
 def main(argv: list[str] | None = None) -> int:
+    _ensure_streams()
     _fix_console_encoding()
     # 记下「这一次到底敲了什么」：自启项要照着它把 --config/--log 带过去。
     # 不能直接读 sys.argv —— main(argv) 被测试/驱动调用时，那份 argv 才是真的。
     run_argv = list(sys.argv[1:] if argv is None else argv)
-    args = build_parser().parse_args(argv)
+    # 这次**怎么启动**和**要不要记进自启项**是两件事：双击打包版时补出来的
+    # --background --panel 只用于本次解析，绝不能写进开机自启项（否则每次开机
+    # 都弹一个窗口出来）。
+    args = build_parser().parse_args(_double_click_args(run_argv))
 
     # 修饰参数单独出现时要说清楚 —— 否则它被静默忽略，程序「照常启动」，
     # 用户以为自己刚跑了个检查，其实只是把输入法又拉起了一份。
@@ -433,8 +475,20 @@ def main(argv: list[str] | None = None) -> int:
             # 抢到互斥体，另一份按约定退出 3。以前这里被当成「后台启动失败」，
             # run.bat 还 pause —— 可输入法根本没事（第 106 轮）。「已经有一份
             # 在跑」这句话由 daemon 那层说（它拿得到 pid），这里只说下一步。
-            print("[main] 想操作它就再双击一次 run.bat —— 会弹出一个设置窗口。")
+            print("[main] 已经有一份在后台跑着了，没重复启动。")
             print(f"[main] 日志：{log}")
+            # 但「再双击一次」的唯一目的就是找入口：双击打包版 exe 时尤其如此
+            # （没有 run.bat 可以点，也没有控制台能看菜单），所以这里必须开窗
+            # —— 以前直接 return 0，用户看到的就是「双击了，毫无反应」（第 125 轮）。
+            if _want_panel(args, cfg):
+                from t_ime import panel
+
+                ok, detail = panel.spawn_panel(ROOT, cfg_path, log)
+                print(f"[main] {detail}")
+                if not ok:
+                    print(f"[main] {detail}", file=sys.stderr)
+            else:
+                print("[main] 想操作它就再双击一次 —— 会弹出一个设置窗口。")
             return 0
         if rc == 0:
             print("[main] 已在后台启动（没有窗口，关掉这个黑框不影响它）。")
@@ -458,6 +512,15 @@ def main(argv: list[str] | None = None) -> int:
             print("[main] 这段时间敲的字不会被接管，也不会弹候选窗 —— 等它就绪再打字，"
                   "或者用 run.bat --foreground 盯着日志看。")
             print(f"[main] 日志：{log}")
+            # 窗口照开：正是这种「双击了但没反应」的时刻，窗口里的状态卡才有用
+            # （它自己会诊断「钩子还没收到按键」）。第 125 轮。
+            if _want_panel(args, cfg):
+                from t_ime import panel
+
+                ok, detail = panel.spawn_panel(ROOT, cfg_path, log)
+                print(f"[main] {detail}")
+                if not ok:
+                    print(f"[main] {detail}", file=sys.stderr)
         else:
             print(f"[main] 后台启动失败（退出码 {rc}）。", file=sys.stderr)
         return rc

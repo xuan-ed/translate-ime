@@ -565,8 +565,8 @@ check("已经有一份在跑时 main(--background) 返回 0（不让 run.bat pau
       rc_main106 == 0, f"rc={rc_main106}")
 check("这时不许说「已在后台启动」（那不是这一次启动的）",
       "已在后台启动" not in _said106, _said106[-300:])
-check("要告诉用户「再双击一次会弹控制面板」",
-      "再双击一次 run.bat" in _said106, _said106[-300:])
+check("要告诉用户「再双击一次会弹设置窗口」",
+      "再双击一次" in _said106 and "设置窗口" in _said106, _said106[-300:])
 check("也不许说「后台启动失败」", "后台启动失败" not in _said106, _said106[-300:])
 _src106 = (ROOT / "main.py").read_text(encoding="utf-8")
 check("main.py 确实在分派这个退出码（不是只靠注释）",

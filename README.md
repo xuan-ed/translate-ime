@@ -82,7 +82,7 @@ translate-ime 把它压成一步：
 到 [Releases](https://github.com/xuan-ed/translate-ime/releases) 下最新的 `translate-ime-windows-x64*.zip`：
 
 1. 解压到**任意可写目录**（别放 `C:\Program Files`，那儿不给写配置）；
-2. 双击 `translate-ime.exe` —— 弹出设置窗口，把 API key 填进去，点「保存并同步」；
+2. 双击 `translate-ime.exe` —— 它会在后台常驻并弹出设置窗口，把 API key 填进去，点「保存并同步」（**再双击一次**只是把窗口提到前面，不会多跑一份）；
 3. 想确认它到底能不能收到按键，跑 `translate-ime-cli.exe --check`。
 
 zip 里两个 exe 是有分工的：
